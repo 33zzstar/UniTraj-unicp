@@ -24,7 +24,7 @@ from datasets import common_utils
 from datasets.common_utils import get_polyline_dir, find_true_segments, generate_mask, is_ddp, \
     get_kalman_difficulty, get_trajectory_type, interpolate_polyline
 from datasets.types import object_type, polyline_type
-from utils.visualization import check_loaded_data
+from utils.visualization import visualize_prediction
 from functools import lru_cache
 
 default_value = 0

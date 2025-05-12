@@ -62,7 +62,7 @@ class MotionTransformer(BaseModel):
         loss, tb_dict, disp_dict = self.motion_decoder.get_loss()
 
         return loss
-
+    #优化器和学习率调度器
     def configure_optimizers(self):
         decay_steps = [x for x in self.config['learning_rate_sched']]
 
