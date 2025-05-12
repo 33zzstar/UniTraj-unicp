@@ -23,7 +23,7 @@ method:
   MOTION_DECODER:
     NAME: MTRDecoder
     NUM_MOTION_MODES: 6
-    INTENTION_POINTS_FILE: /home/zzs/UniTraj-main/unitraj/models/mtr/cluster_64_center_dict_6s.pkl
+    INTENTION_POINTS_FILE: /home/zzs/UniTraj-unicp/unitraj/models/mtr/cluster_64_center_dict_6s.pkl
     D_MODEL: 512
     NUM_DECODER_LAYERS: 6
     NUM_ATTN_HEAD: 8

@@ -319,8 +319,15 @@ class BaseModel(pl.LightningModule):
         for k, v in loss_dict.items():
             self.log(status + "/" + k, v, on_step=False, on_epoch=True, sync_dist=True, batch_size=size_dict[k])
 
+        # zzs
+        if self.local_rank == 0 and status == 'val':
         # if self.local_rank == 0 and status == 'val' and batch_idx == 0:
-        #     img = visualization.visualize_prediction(batch, prediction)
-        #     wandb.log({"prediction": [wandb.Image(img)]})
+          img,gt_his_traj,gt_fut_traj,gt_his_ctrl,gt_fut_ctrl = visualization.visualize_prediction(batch, prediction,model_cfg=self.model_cfg,)
+        #   wandb.log({"prediction": [wandb.Image(img)]})
+
+
+          # 保存图像
+          img_save_path = "/home/zzs/UniTraj-unicp/output/5_12"  # 你想要保存图像的路径
+          img.savefig(img_save_path)  # 保存图像
 
         return

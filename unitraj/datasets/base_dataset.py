@@ -18,7 +18,8 @@ sys.path.insert(0,parentdir)
 from scenarionet.common_utils import read_scenario, read_dataset_summary
 from torch.utils.data import Dataset
 from tqdm import tqdm
-
+parentdir = '/home/zzs/UniTraj-unicp/unitraj'
+sys.path.insert(0,parentdir) 
 from datasets import common_utils
 from datasets.common_utils import get_polyline_dir, find_true_segments, generate_mask, is_ddp, \
     get_kalman_difficulty, get_trajectory_type, interpolate_polyline
@@ -53,7 +54,9 @@ class BaseDataset(Dataset):
 
         for cnt, data_path in enumerate(self.data_path):
             phase, dataset_name = data_path.split('/')[-2],data_path.split('/')[-1]
-            self.cache_path = os.path.join(self.config['cache_path'], dataset_name, phase)
+            unicp_suffix = "_w_unicp" if self.config.get('unicp', False) else "_wo_unicp"
+            dataset_name_with_suffix = f"{dataset_name}{unicp_suffix}"
+            self.cache_path = os.path.join(self.config['cache_path'], dataset_name_with_suffix)
 
             data_usage_this_dataset = self.config['max_data_num'][cnt]
             self.starting_frame = self.config['starting_frame'][cnt]
@@ -379,10 +382,10 @@ class BaseDataset(Dataset):
 
         sample_num = center_objects.shape[0]
 
-        (obj_trajs_data, obj_trajs_mask, obj_trajs_pos, obj_trajs_last_pos, obj_trajs_future_state,
-         obj_trajs_future_mask, center_gt_trajs,
-         center_gt_trajs_mask, center_gt_final_valid_idx,
-         track_index_to_predict_new) = self.get_agent_data(
+        (obj_trajs_data, obj_trajs_mask, obj_trajs_pos, obj_trajs_last_pos,
+            obj_trajs_future_state, obj_trajs_future_mask, center_gt_trajs,
+            center_gt_trajs_mask, center_gt_final_valid_idx,
+            track_index_to_predict_new,history_control_points, future_control_points,history_mapped_trajectories,future_mapped_trajectories) = self.get_agent_data(
             center_objects=center_objects, obj_trajs_past=obj_trajs_past, obj_trajs_future=obj_trajs_future,
             track_index_to_predict=track_index_to_predict, sdc_track_index=sdc_track_index,
             timestamps=timestamps, obj_types=obj_types
@@ -408,6 +411,14 @@ class BaseDataset(Dataset):
             'center_gt_final_valid_idx': center_gt_final_valid_idx,
             'center_gt_trajs_src': obj_trajs_full[track_index_to_predict]
         }
+        # 只有在unicp为True时才添加控制点相关数据
+        if self.config.get('unicp', False):
+            ret_dict.update({
+                'history_control_points': history_control_points,
+                'future_control_points': future_control_points,
+                'history_ctrl_mapped_trajectories': history_mapped_trajectories,
+                'future_ctrl_mapped_trajectories': future_mapped_trajectories
+            })
 
         if info['map_infos']['all_polylines'].__len__() == 0:
             info['map_infos']['all_polylines'] = np.zeros((2, 7), dtype=np.float32)
@@ -477,9 +488,14 @@ class BaseDataset(Dataset):
 
         input_dict = {}
         for key, val_list in key_to_list.items():
+
             # if val_list is str:
             try:
-                input_dict[key] = torch.from_numpy(np.stack(val_list, axis=0))
+                # 对mask进行特殊处理,确保是布尔类型
+                if key in ['obj_trajs_mask', 'map_polylines_mask']:
+                    input_dict[key] = torch.from_numpy(np.stack(val_list, axis=0)).bool()
+                else:
+                    input_dict[key] = torch.from_numpy(np.stack(val_list, axis=0))
             except:
                 input_dict[key] = val_list
 
@@ -592,6 +608,90 @@ class BaseDataset(Dataset):
         center_gt_trajs = obj_trajs_future_state[center_obj_idxs, track_index_to_predict]
         center_gt_trajs_mask = obj_trajs_future_mask[center_obj_idxs, track_index_to_predict]
         center_gt_trajs[center_gt_trajs_mask == 0] = 0
+        # 初始化返回值为None
+        history_control_points = None
+        future_control_points = None
+        history_mapped_trajectories = None
+        future_mapped_trajectories = None
+
+
+        # 只有在unicp为True时才执行控制点相关代码
+        if self.config.get('unicp', False):
+
+            ####添加历史轨迹和未来轨迹的控制点转换
+            def get_trajectory_control_points(trajectory, mask):
+                import os ,sys
+                parentdir = '/home/zzs/UniTraj-unicp/'
+
+                sys.path.insert(0,parentdir) 
+                from Bernstein import (
+                    bernstein_poly,
+                    bernstein_curve,
+                    fit_bernstein_curve,
+                    apply_kalman_filter)
+                
+                """转换轨迹为控制点"""
+                valid_points = trajectory[mask > 0]
+                if len(valid_points) < 2:
+                    return None
+                
+                # 应用卡尔曼滤波
+                filtered_trajectory = apply_kalman_filter(valid_points)
+                
+                # 拟合控制点 
+                degree = 5  # 控制点数量
+                control_points = fit_bernstein_curve(filtered_trajectory, degree)
+                
+                return control_points
+            # 将控制点映射回观测时间帧数个的离散位置点
+            def map_control_points_to_trajectory(control_points, num_frames):
+                """将控制点映射回观测时间帧数个的离散位置点"""
+                import os, sys
+                parentdir = '/zzs/UniTraj/unitraj/'
+                sys.path.insert(0, parentdir) 
+                from Bernstein import bernstein_curve
+                
+                trajectories = []
+                for cp in control_points:
+                    if cp is None:  # 处理无效控制点情况
+                        trajectories.append(np.zeros((num_frames, 2)))
+                        continue
+                        
+                    # 生成参数t (对应于时间步)
+                    t = np.linspace(0, 1, num_frames)
+                    # 使用伯恩斯坦曲线映射回离散点
+                    trajectory = bernstein_curve(cp, t)
+                    trajectories.append(trajectory)
+                    
+                return np.stack(trajectories)
+
+
+            # 转换历史轨迹控制点
+            history_control_points = []
+            for i in range(len(track_index_to_predict)):
+                history_traj = obj_trajs_data[i, track_index_to_predict[i], :, :2]  # 只取x,y坐标
+                history_mask = obj_trajs_mask[i, track_index_to_predict[i]]
+                control_points = get_trajectory_control_points(history_traj, history_mask)
+                history_control_points.append(control_points)
+            history_control_points = np.stack(history_control_points)
+            
+            # 转换未来轨迹控制点  
+            future_control_points = []
+            for i in range(len(track_index_to_predict)):
+                future_traj = center_gt_trajs[i, :, :2]  # 只取x,y坐标
+                future_mask = center_gt_trajs_mask[i]
+                control_points = get_trajectory_control_points(future_traj, future_mask)
+                future_control_points.append(control_points)
+            future_control_points = np.stack(future_control_points)
+            ####
+                # 映射历史轨迹
+            history_frames = obj_trajs_past.shape[1]  # 历史帧数
+            history_mapped_trajectories = map_control_points_to_trajectory(history_control_points, history_frames)
+            
+            # 映射未来轨迹
+            future_frames = obj_trajs_future.shape[2]  # 未来帧数
+            future_mapped_trajectories = map_control_points_to_trajectory(future_control_points, future_frames)
+
 
         assert obj_trajs_past.__len__() == obj_trajs_data.shape[1]
         valid_past_mask = np.logical_not(obj_trajs_past[:, :, -1].sum(axis=-1) == 0)
@@ -640,10 +740,12 @@ class BaseDataset(Dataset):
         obj_trajs_future_mask = np.pad(obj_trajs_future_mask,
                                        ((0, 0), (0, max_num_agents - obj_trajs_future_mask.shape[1]), (0, 0)))
 
-        return (obj_trajs_data, obj_trajs_mask.astype(bool), obj_trajs_pos, obj_trajs_last_pos,
-                obj_trajs_future_state, obj_trajs_future_mask, center_gt_trajs, center_gt_trajs_mask,
-                center_gt_final_valid_idx,
-                track_index_to_predict_new)
+        return (obj_trajs_data, obj_trajs_mask, obj_trajs_pos, obj_trajs_last_pos,
+                obj_trajs_future_state, obj_trajs_future_mask, center_gt_trajs,
+                center_gt_trajs_mask, center_gt_final_valid_idx,
+                track_index_to_predict_new, 
+                history_control_points, future_control_points,history_mapped_trajectories, future_mapped_trajectories)  # 新增返回值
+
 
     def get_interested_agents(self, track_index_to_predict, obj_trajs_full, current_time_index, obj_types, scene_id):
         center_objects_list = []
@@ -1034,6 +1136,37 @@ from omegaconf import OmegaConf
 
 
 @hydra.main(version_base=None, config_path="../configs", config_name="config")
+def draw_lode_data_figures(cfg):
+    set_seed(cfg.seed)
+    OmegaConf.set_struct(cfg, False)  # Open the struct
+    cfg = OmegaConf.merge(cfg, cfg.method)
+    train_set = build_dataset(cfg)
+
+    train_loader = torch.utils.data.DataLoader(train_set, batch_size=1, shuffle=True, num_workers=0,
+                                               collate_fn=train_set.collate_fn)
+
+    concat_list = [4, 4, 4, 4]  # 减少数量以更快查看结果
+    images = []
+    save_dir = "/home/zzs/UniTraj-unicp/output/visualizations" 
+    os.makedirs(save_dir, exist_ok=True)
+    for n, data in tqdm(enumerate(train_loader)):
+        for i in range(data['batch_size']):
+            # 使用修改后的check_loaded_data函数
+            plt = plt_loaded_data(data['input_dict'], i, show_ctrl_points=True)
+            plt.savefig(f"{save_dir}/sample_{n}_{i}.png", bbox_inches='tight')
+            buf = io.BytesIO()
+            plt.savefig(buf, format='png', bbox_inches='tight', pad_inches=0)
+            buf.seek(0)
+            img = Image.open(buf)
+            images.append(img)
+        if len(images) >= sum(concat_list):
+            break
+    final_image = concatenate_varying(images, concat_list)
+    final_image.show()
+    
+    # 保存图像
+    final_image.save("trajectories_with_control_points.png")
+
 def draw_figures(cfg):
     set_seed(cfg.seed)
     OmegaConf.set_struct(cfg, False)  # Open the struct
@@ -1098,6 +1231,7 @@ if __name__ == '__main__':
     import io
     from PIL import Image
     from unitraj.utils.visualization import concatenate_varying
-
+    
     split_data()
-    # draw_figures()
+    
+    

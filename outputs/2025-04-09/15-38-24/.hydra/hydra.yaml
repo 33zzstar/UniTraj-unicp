@@ -129,7 +129,7 @@ hydra:
   runtime:
     version: 1.3.2
     version_base: '1.3'
-    cwd: /home/zzs/UniTraj-main
+    cwd: /home/zzs/UniTraj-unicp
     config_sources:
     - path: hydra.conf
       schema: pkg
@@ -140,7 +140,7 @@ hydra:
     - path: ''
       schema: structured
       provider: schema
-    output_dir: /home/zzs/UniTraj-main/outputs/2025-04-09/15-38-24
+    output_dir: /home/zzs/UniTraj-unicp/outputs/2025-04-09/15-38-24
     choices:
       method: MTR
       hydra/env: default

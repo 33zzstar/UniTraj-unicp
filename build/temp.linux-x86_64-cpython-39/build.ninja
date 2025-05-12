@@ -23,13 +23,13 @@ rule cuda_compile
 
 
 
-build /home/zzs/UniTraj-main/build/temp.linux-x86_64-cpython-39/unitraj/models/mtr/ops/attention/src/attention_api.o: compile /home/zzs/UniTraj-main/unitraj/models/mtr/ops/attention/src/attention_api.cpp
-build /home/zzs/UniTraj-main/build/temp.linux-x86_64-cpython-39/unitraj/models/mtr/ops/attention/src/attention_func.o: compile /home/zzs/UniTraj-main/unitraj/models/mtr/ops/attention/src/attention_func.cpp
-build /home/zzs/UniTraj-main/build/temp.linux-x86_64-cpython-39/unitraj/models/mtr/ops/attention/src/attention_func_v2.o: compile /home/zzs/UniTraj-main/unitraj/models/mtr/ops/attention/src/attention_func_v2.cpp
-build /home/zzs/UniTraj-main/build/temp.linux-x86_64-cpython-39/unitraj/models/mtr/ops/attention/src/attention_value_computation_kernel.o: cuda_compile /home/zzs/UniTraj-main/unitraj/models/mtr/ops/attention/src/attention_value_computation_kernel.cu
-build /home/zzs/UniTraj-main/build/temp.linux-x86_64-cpython-39/unitraj/models/mtr/ops/attention/src/attention_value_computation_kernel_v2.o: cuda_compile /home/zzs/UniTraj-main/unitraj/models/mtr/ops/attention/src/attention_value_computation_kernel_v2.cu
-build /home/zzs/UniTraj-main/build/temp.linux-x86_64-cpython-39/unitraj/models/mtr/ops/attention/src/attention_weight_computation_kernel.o: cuda_compile /home/zzs/UniTraj-main/unitraj/models/mtr/ops/attention/src/attention_weight_computation_kernel.cu
-build /home/zzs/UniTraj-main/build/temp.linux-x86_64-cpython-39/unitraj/models/mtr/ops/attention/src/attention_weight_computation_kernel_v2.o: cuda_compile /home/zzs/UniTraj-main/unitraj/models/mtr/ops/attention/src/attention_weight_computation_kernel_v2.cu
+build /home/zzs/UniTraj-unicp/build/temp.linux-x86_64-cpython-39/unitraj/models/mtr/ops/attention/src/attention_api.o: compile /home/zzs/UniTraj-unicp/unitraj/models/mtr/ops/attention/src/attention_api.cpp
+build /home/zzs/UniTraj-unicp/build/temp.linux-x86_64-cpython-39/unitraj/models/mtr/ops/attention/src/attention_func.o: compile /home/zzs/UniTraj-unicp/unitraj/models/mtr/ops/attention/src/attention_func.cpp
+build /home/zzs/UniTraj-unicp/build/temp.linux-x86_64-cpython-39/unitraj/models/mtr/ops/attention/src/attention_func_v2.o: compile /home/zzs/UniTraj-unicp/unitraj/models/mtr/ops/attention/src/attention_func_v2.cpp
+build /home/zzs/UniTraj-unicp/build/temp.linux-x86_64-cpython-39/unitraj/models/mtr/ops/attention/src/attention_value_computation_kernel.o: cuda_compile /home/zzs/UniTraj-unicp/unitraj/models/mtr/ops/attention/src/attention_value_computation_kernel.cu
+build /home/zzs/UniTraj-unicp/build/temp.linux-x86_64-cpython-39/unitraj/models/mtr/ops/attention/src/attention_value_computation_kernel_v2.o: cuda_compile /home/zzs/UniTraj-unicp/unitraj/models/mtr/ops/attention/src/attention_value_computation_kernel_v2.cu
+build /home/zzs/UniTraj-unicp/build/temp.linux-x86_64-cpython-39/unitraj/models/mtr/ops/attention/src/attention_weight_computation_kernel.o: cuda_compile /home/zzs/UniTraj-unicp/unitraj/models/mtr/ops/attention/src/attention_weight_computation_kernel.cu
+build /home/zzs/UniTraj-unicp/build/temp.linux-x86_64-cpython-39/unitraj/models/mtr/ops/attention/src/attention_weight_computation_kernel_v2.o: cuda_compile /home/zzs/UniTraj-unicp/unitraj/models/mtr/ops/attention/src/attention_weight_computation_kernel_v2.cu
 
 
 
