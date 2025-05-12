@@ -1,0 +1,2 @@
+epoch,step,val/brier_fde,val/minADE6,val/minFDE6,val/miss_rate,val/nuscenes/brier_fde,val/nuscenes/minADE6,val/nuscenes/minFDE6,val/nuscenes/miss_rate
+0,2,15.701820373535156,7.942283630371094,14.732828140258789,1.0,15.701820373535156,7.942283630371094,14.732828140258789,1.0
