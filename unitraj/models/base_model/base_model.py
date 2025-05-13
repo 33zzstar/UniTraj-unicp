@@ -327,7 +327,7 @@ class BaseModel(pl.LightningModule):
 
 
           # 保存图像
-          img_save_path = "/home/zzs/UniTraj-unicp/output/5_13"  # 你想要保存图像的路径
+          img_save_path = "/zzs/UniTraj-unicp/output/5_13"  # 你想要保存图像的路径
           img.savefig(img_save_path)  # 保存图像
 
         return

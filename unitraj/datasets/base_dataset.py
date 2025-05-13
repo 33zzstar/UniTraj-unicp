@@ -7,18 +7,18 @@ import h5py
 import numpy as np
 import torch
 import os,sys 
-parentdir = '/home/zzs/mdsn/metadrive'
+parentdir = '/zzs/mdsn/metadrive'
 
 sys.path.insert(0,parentdir) 
 
 
 from metadrive.scenario.scenario_description import MetaDriveType
-parentdir = '/home/zzs/mdsn/scenarionet'
+parentdir = '/zzs/mdsn/scenarionet'
 sys.path.insert(0,parentdir) 
 from scenarionet.common_utils import read_scenario, read_dataset_summary
 from torch.utils.data import Dataset
 from tqdm import tqdm
-parentdir = '/home/zzs/UniTraj-unicp/unitraj'
+parentdir = '/zzs/UniTraj-unicp/unitraj'
 sys.path.insert(0,parentdir) 
 from datasets import common_utils
 from datasets.common_utils import get_polyline_dir, find_true_segments, generate_mask, is_ddp, \
@@ -621,7 +621,7 @@ class BaseDataset(Dataset):
             ####添加历史轨迹和未来轨迹的控制点转换
             def get_trajectory_control_points(trajectory, mask):
                 import os ,sys
-                parentdir = '/home/zzs/UniTraj-unicp/'
+                parentdir = '/zzs/UniTraj-unicp/'
 
                 sys.path.insert(0,parentdir) 
                 from Bernstein import (
@@ -1147,7 +1147,7 @@ def draw_lode_data_figures(cfg):
 
     concat_list = [4, 4, 4, 4]  # 减少数量以更快查看结果
     images = []
-    save_dir = "/home/zzs/UniTraj-unicp/output/visualizations" 
+    save_dir = "/zzs/UniTraj-unicp/output/visualizations" 
     os.makedirs(save_dir, exist_ok=True)
     for n, data in tqdm(enumerate(train_loader)):
         for i in range(data['batch_size']):

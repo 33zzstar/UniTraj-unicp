@@ -1,6 +1,6 @@
 
 import os,sys 
-parentdir = '/home/zzs/UniTraj-unicp/'
+parentdir = '/zzs/UniTraj-unicp/'
 sys.path.insert(0,parentdir) 
 
 from unitraj.models.autobot.autobot import AutoBotEgo

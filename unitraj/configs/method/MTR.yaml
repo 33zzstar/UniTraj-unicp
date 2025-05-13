@@ -21,7 +21,7 @@ CONTEXT_ENCODER:
 MOTION_DECODER:
   NAME: MTRDecoder
   NUM_MOTION_MODES: 6
-  INTENTION_POINTS_FILE: '/home/zzs/UniTraj-unicp/unitraj/models/mtr/cluster_64_center_dict_6s.pkl'
+  INTENTION_POINTS_FILE: '/zzs/UniTraj-unicp/unitraj/models/mtr/cluster_64_center_dict_6s.pkl'
   D_MODEL: 512
   NUM_DECODER_LAYERS: 6
   NUM_ATTN_HEAD: 8
@@ -48,8 +48,8 @@ weight_decay: 0.01
 lr_decay: 0.5
 lr_clip: 0.000001
 WEIGHT_DECAY: 0.01
-train_batch_size: 64 #32 #128
-eval_batch_size: 64 #32 #128
+train_batch_size: 12 #32 #128
+eval_batch_size: 128 #32 #128
 
 # data related
 max_num_agents: 64

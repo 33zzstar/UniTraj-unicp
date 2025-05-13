@@ -34,7 +34,7 @@ def evaluation(cfg):
     trainer = pl.Trainer(
         inference_mode=True,
         logger=None if cfg.debug else WandbLogger(project="unitraj", name=cfg.exp_name),
-        devices=1,
+        devices=[2,3],
         accelerator="gpu" if cfg.debug else "gpu",
         profiler="simple",
     )
