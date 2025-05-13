@@ -38,7 +38,7 @@ MOTION_DECODER:
   NMS_DIST_THRESH: 2.5
 
 # train
-max_epochs: 40
+max_epochs: 100
 learning_rate: 0.0001
 learning_rate_sched: [ 22, 24, 26, 28 ]
 optimizer: AdamW
@@ -48,8 +48,8 @@ weight_decay: 0.01
 lr_decay: 0.5
 lr_clip: 0.000001
 WEIGHT_DECAY: 0.01
-train_batch_size: 8 #32 #128
-eval_batch_size: 8 #32 #128
+train_batch_size: 64 #32 #128
+eval_batch_size: 64 #32 #128
 
 # data related
 max_num_agents: 64

@@ -92,6 +92,13 @@ class MTREncoder(nn.Module):
             num_layers=self.model_cfg.NUM_LAYER_IN_MLP_AGENT,
             out_channels=self.model_cfg.D_MODEL
         )
+        # build polyline encoders
+        self.ego_polyline_encoder = self.build_polyline_encoder(
+            in_channels=self.model_cfg.NUM_INPUT_ATTR_AGENT + 3,
+            hidden_dim=self.model_cfg.NUM_CHANNEL_IN_MLP_AGENT,
+            num_layers=self.model_cfg.NUM_LAYER_IN_MLP_AGENT,
+            out_channels=self.model_cfg.D_MODEL
+        )
         self.map_polyline_encoder = self.build_polyline_encoder(
             in_channels=self.model_cfg.NUM_INPUT_ATTR_MAP,
             hidden_dim=self.model_cfg.NUM_CHANNEL_IN_MLP_MAP,
@@ -228,14 +235,63 @@ class MTREncoder(nn.Module):
 
         num_center_objects, num_objects, num_timestamps, _ = obj_trajs.shape
         num_polylines = map_polylines.shape[1]
+        combined_features = None
+        ego_trajs_mask = None
+            # 合并自车控制离散点特征到obj_trajs中
+        if "history_ctrl_mapped_trajectories" in input_dict:
+            ctrl_features = input_dict["history_ctrl_mapped_trajectories"]  # [8,21,2]
+            combined_features = torch.zeros(
+            (num_center_objects, num_timestamps, 41),  # 39+2=41
+            dtype=obj_trajs.dtype,
+            device=obj_trajs.device
+        )
+            ego_trajs_mask = torch.zeros(
+            (num_center_objects, 1, num_timestamps),
+            dtype=torch.bool,
+            device=obj_trajs_mask.device
+        )
+
+
 
         # apply polyline encoder
         obj_trajs_in = torch.cat((obj_trajs, obj_trajs_mask[:, :, :, None].type_as(obj_trajs)), dim=-1)
+        #B,64,256
         obj_polylines_feature = self.agent_polyline_encoder(obj_trajs_in,
                                                             obj_trajs_mask)  # (num_center_objects, num_objects, C)
+        #B,728,256
         map_polylines_feature = self.map_polyline_encoder(map_polylines,
-                                                          map_polylines_mask)  # (num_center_objects, num_polylines, C)
+                                                          map_polylines_mask) 
+                # 为每个中心车辆（自车）
+        for i in range(num_center_objects):
+            ego_idx = track_index_to_predict[i]
+            
+            # 创建新的特征张量，包含原始特征和控制特征
+            ego_features = obj_trajs[i, ego_idx].unsqueeze(0)  # [1,21,39]
+            ctrl_features_i = ctrl_features[i].unsqueeze(0) 
+            combined_features = torch.cat([ego_features, ctrl_features_i], dim=-1)  # [1,21,41]
+            ego_trajs_mask[i, 0] = obj_trajs_mask[i, ego_idx]
 
+            #   堆叠特征
+            combined_features_in = torch.zeros(
+                (num_center_objects, 1, num_timestamps, 41),
+                dtype=obj_trajs.dtype,
+                device=obj_trajs.device
+            )
+            combined_features_in[i] = combined_features
+
+                    # 添加mask维度以匹配encoder的输入格式
+        combined_features_in = torch.cat([
+            combined_features_in,  # [B,1,21,41]
+            ego_trajs_mask.unsqueeze(-1).type_as(combined_features_in)  # [B,1,21,1]
+        ], dim=-1)
+        ego_polylines_feature = self.ego_polyline_encoder(combined_features_in,
+                                                         ego_trajs_mask) 
+        # 用ego_polylines_feature替换center_objects_feature中对应位置的特征
+        center_objects_feature = ego_polylines_feature 
+        for i in range(num_center_objects):
+            ego_idx = track_index_to_predict[i]
+            obj_polylines_feature[i, ego_idx] = center_objects_feature[i]
+            
         # apply self-attn
         obj_valid_mask = (obj_trajs_mask.sum(dim=-1) > 0)  # (num_center_objects, num_objects)
         map_valid_mask = (map_polylines_mask.sum(dim=-1) > 0)  # (num_center_objects, num_polylines)
@@ -268,6 +324,9 @@ class MTREncoder(nn.Module):
         batch_dict['map_mask'] = map_valid_mask
         batch_dict['obj_pos'] = obj_trajs_last_pos
         batch_dict['map_pos'] = map_polylines_center
+        # 【修改】保存合并特征到batch_dict中，以便后续使用
+        if combined_features is not None:
+            batch_dict['ego_combined_features'] = combined_features
 
         return batch_dict
 
@@ -343,7 +402,7 @@ class MTRDecoder(nn.Module):
         )
         self.dense_future_head = build_mlps(
             c_in=hidden_dim * 2,
-            mlp_channels=[hidden_dim, hidden_dim, num_future_frames * 7], ret_before_act=True
+            mlp_channels=[hidden_dim, hidden_dim, num_future_frames * 9], ret_before_act=True
         )
 
         self.future_traj_mlps = build_mlps(
@@ -395,7 +454,7 @@ class MTRDecoder(nn.Module):
     def build_motion_head(self, in_channels, hidden_size, num_decoder_layers):
         motion_reg_head = build_mlps(
             c_in=in_channels,
-            mlp_channels=[hidden_size, hidden_size, self.num_future_frames * 7], ret_before_act=True
+            mlp_channels=[hidden_size, hidden_size, self.num_future_frames * 9], ret_before_act=True
         )
         motion_cls_head = build_mlps(
             c_in=in_channels,
@@ -417,7 +476,7 @@ class MTRDecoder(nn.Module):
         obj_fused_feature_valid = torch.cat((obj_pos_feature_valid, obj_feature_valid), dim=-1)
 
         pred_dense_trajs_valid = self.dense_future_head(obj_fused_feature_valid)
-        pred_dense_trajs_valid = pred_dense_trajs_valid.view(pred_dense_trajs_valid.shape[0], self.num_future_frames, 7)
+        pred_dense_trajs_valid = pred_dense_trajs_valid.view(pred_dense_trajs_valid.shape[0], self.num_future_frames, 9)
 
         temp_center = pred_dense_trajs_valid[:, :, 0:2] + obj_pos_valid[:, None, 0:2]
         pred_dense_trajs_valid = torch.cat((temp_center, pred_dense_trajs_valid[:, :, 2:]), dim=-1)
@@ -433,7 +492,7 @@ class MTRDecoder(nn.Module):
         ret_obj_feature = torch.zeros_like(obj_feature)
         ret_obj_feature[obj_mask] = obj_feature_valid
 
-        ret_pred_dense_future_trajs = obj_feature.new_zeros(num_center_objects, num_objects, self.num_future_frames, 7)
+        ret_pred_dense_future_trajs = obj_feature.new_zeros(num_center_objects, num_objects, self.num_future_frames, 9)
         ret_pred_dense_future_trajs[obj_mask] = pred_dense_trajs_valid
         self.forward_ret_dict['pred_dense_trajs'] = ret_pred_dense_future_trajs
 
@@ -631,10 +690,12 @@ class MTRDecoder(nn.Module):
                                                                                     self.num_future_frames, 5)
                 pred_vel = self.motion_vel_heads[layer_idx](query_content_t).view(num_center_objects, num_query,
                                                                                   self.num_future_frames, 2)
-                pred_trajs = torch.cat((pred_trajs, pred_vel), dim=-1)
+                pred_ctrl = self.motion_vel_heads[layer_idx](query_content_t).view(num_center_objects, num_query,
+                                                                                  self.num_future_frames, 2)
+                pred_trajs = torch.cat((pred_trajs, pred_vel,pred_ctrl), dim=-1)
             else:
                 pred_trajs = self.motion_reg_heads[layer_idx](query_content_t).view(num_center_objects, num_query,
-                                                                                    self.num_future_frames, 7)
+                                                                                    self.num_future_frames, 9)
 
             pred_list.append([pred_scores, pred_trajs])
 
@@ -650,6 +711,7 @@ class MTRDecoder(nn.Module):
         return pred_list
 
     def get_decoder_loss(self, tb_pre_tag=''):
+        center_gt_ctrl_trajs = self.forward_ret_dict['future_GT_ctrl_mapped_trajectories']
         center_gt_trajs = self.forward_ret_dict['center_gt_trajs']
         center_gt_trajs_mask = self.forward_ret_dict['center_gt_trajs_mask']
         center_gt_final_valid_idx = self.forward_ret_dict['center_gt_final_valid_idx'].long()
@@ -676,8 +738,8 @@ class MTRDecoder(nn.Module):
                 raise NotImplementedError
 
             pred_scores, pred_trajs = pred_list[layer_idx]
-            assert pred_trajs.shape[-1] == 7
-            pred_trajs_gmm, pred_vel = pred_trajs[:, :, :, 0:5], pred_trajs[:, :, :, 5:7]
+            assert pred_trajs.shape[-1] == 9
+            pred_trajs_gmm, pred_vel ,pred_ctrl= pred_trajs[:, :, :, 0:5], pred_trajs[:, :, :, 5:7], pred_trajs[:, :, :, 7:9]
 
             loss_reg_gmm, center_gt_positive_idx = loss_utils.nll_loss_gmm_direct(
                 pred_scores=pred_scores, pred_trajs=pred_trajs_gmm,
@@ -689,15 +751,25 @@ class MTRDecoder(nn.Module):
             pred_vel = pred_vel[torch.arange(num_center_objects), center_gt_positive_idx]
             loss_reg_vel = F.l1_loss(pred_vel, center_gt_trajs[:, :, 2:4], reduction='none')
             loss_reg_vel = (loss_reg_vel * center_gt_trajs_mask[:, :, None]).sum(dim=-1).sum(dim=-1)
+            # 计算控制点预测损失
+            pred_ctrl = pred_ctrl[torch.arange(num_center_objects), center_gt_positive_idx]  # [B,T,2]
+            center_gt_ctrl_trajs = self.forward_ret_dict['future_GT_ctrl_mapped_trajectories']  # [B,T,2]
+            
+            # 计算L2损失
+            loss_ctrl = F.mse_loss(pred_ctrl, center_gt_ctrl_trajs, reduction='none')  # [B,T,2]
+            # 应用mask并计算平均损失
+            loss_ctrl = (loss_ctrl * center_gt_trajs_mask[:, :, None]).sum(dim=-1).sum(dim=-1) / torch.clamp_min(center_gt_trajs_mask.sum(dim=-1), min=1.0)
+            loss_ctrl = loss_ctrl.mean()
 
             loss_cls = F.cross_entropy(input=pred_scores, target=center_gt_positive_idx, reduction='none')
 
             # total loss
             weight_cls = self.model_cfg.LOSS_WEIGHTS.get('cls', 1.0)
             weight_reg = self.model_cfg.LOSS_WEIGHTS.get('reg', 1.0)
+            weight_ctrl = self.model_cfg.LOSS_WEIGHTS.get('ctrl', 0.5)
             weight_vel = self.model_cfg.LOSS_WEIGHTS.get('vel', 0.2)
 
-            layer_loss = loss_reg_gmm * weight_reg + loss_reg_vel * weight_vel + loss_cls.sum(dim=-1) * weight_cls
+            layer_loss = loss_reg_gmm * weight_reg + loss_reg_vel * weight_vel + loss_cls.sum(dim=-1) * weight_cls + loss_ctrl * weight_ctrl
             layer_loss = layer_loss.mean()
             total_loss += layer_loss
             tb_dict[f'{tb_pre_tag}loss_layer{layer_idx}'] = layer_loss.item()
@@ -725,13 +797,14 @@ class MTRDecoder(nn.Module):
         obj_trajs_future_mask = self.forward_ret_dict['obj_trajs_future_mask']
         pred_dense_trajs = self.forward_ret_dict[
             'pred_dense_trajs']  # (num_center_objects, num_objects, num_future_frames, 7)
-        assert pred_dense_trajs.shape[-1] == 7
+        assert pred_dense_trajs.shape[-1] == 9
         assert obj_trajs_future_state.shape[-1] == 4
 
-        pred_dense_trajs_gmm, pred_dense_trajs_vel = pred_dense_trajs[:, :, :, 0:5], pred_dense_trajs[:, :, :, 5:7]
+        pred_dense_trajs_gmm, pred_dense_trajs_vel,pred_dense_trajs_ctrl = pred_dense_trajs[:, :, :, 0:5], pred_dense_trajs[:, :, :, 5:7], pred_dense_trajs[:, :, :, 7:9]
 
         loss_reg_vel = F.l1_loss(pred_dense_trajs_vel, obj_trajs_future_state[:, :, :, 2:4], reduction='none')
         loss_reg_vel = (loss_reg_vel * obj_trajs_future_mask[:, :, :, None]).sum(dim=-1).sum(dim=-1)
+
 
         num_center_objects, num_objects, num_timestamps, _ = pred_dense_trajs.shape
         fake_scores = pred_dense_trajs.new_zeros((num_center_objects, num_objects)).view(-1,
@@ -750,7 +823,12 @@ class MTRDecoder(nn.Module):
         )
         loss_reg_gmm = loss_reg_gmm.view(num_center_objects, num_objects)
 
-        loss_reg = loss_reg_vel + loss_reg_gmm
+
+
+        # 合并所有损失
+        weight_vel = self.model_cfg.LOSS_WEIGHTS.get('vel', 0.2)
+
+        loss_reg = loss_reg_gmm + loss_reg_vel * weight_vel
 
         obj_valid_mask = obj_trajs_future_mask.sum(dim=-1) > 0
 
@@ -764,6 +842,9 @@ class MTRDecoder(nn.Module):
             disp_dict = {}
 
         tb_dict[f'{tb_pre_tag}loss_dense_prediction'] = loss_reg.item()
+        tb_dict[f'{tb_pre_tag}loss_dense_prediction_vel'] = loss_reg_vel.mean().item() * weight_vel
+        
+
         return loss_reg, tb_dict, disp_dict
 
     def get_loss(self, tb_pre_tag=''):
@@ -836,6 +917,7 @@ class MTRDecoder(nn.Module):
         self.forward_ret_dict['obj_trajs_future_mask'] = input_dict['obj_trajs_future_mask']
 
         self.forward_ret_dict['center_objects_type'] = input_dict['center_objects_type']
+        self.forward_ret_dict['future_GT_ctrl_mapped_trajectories'] = input_dict['future_ctrl_mapped_trajectories']
 
         if not self.training:
             pred_scores, pred_trajs = self.generate_final_prediction(pred_list=pred_list, batch_dict=batch_dict)
